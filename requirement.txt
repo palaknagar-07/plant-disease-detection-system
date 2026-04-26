@@ -6,5 +6,5 @@ ipykernel
 matplotlib
 seaborn
 tensorflow-metal
-pencv-python
+opencv-python
 streamlit
