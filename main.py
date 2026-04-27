@@ -1,115 +1,171 @@
+from __future__ import annotations
+
+from io import BytesIO
+import os
+from pathlib import Path
+from urllib.error import URLError
+from urllib.request import urlretrieve
+
 import streamlit as st
 import tensorflow as tf
-import numpy as np
 
-# Tensorflow Model Prediction
-def model_prediction(test_image):
-    model=tf.keras.models.load_model('trained_model.keras')
-    
-    #Preprocessing
-    image = tf.keras.preprocessing.image.load_img(test_image,target_size=(128,128))
-    image_arr = tf.keras.preprocessing.image.img_to_array(image)
-    image_arr=np.array([image_arr])
-    
-    prediction = model.predict(image_arr)   
-    result_index = np.argmax(prediction)
+from src.config import load_config
+from src.labels import is_healthy, load_class_names
+from src.predict import predict_top_k
 
-    return result_index
 
-#Sidebar
-st.sidebar.title("Dashboard")
-app_mode= st.sidebar.selectbox("Select Page",["Home","About","Disease Prediction"]) 
+CONFIG = load_config()
+HOME_IMAGE = Path("home_page.jpeg")
 
-#Home Page
-if app_mode == "Home":
-    st.title("Plant Disease Detection System")
-    image_path="home_page.jpeg"
-    st.image(image_path, use_column_width=True)
-    st.markdown("""
-    Welcome to the Plant Disease Detection System! 🌿🔍
-    
-    Our mission is to help in identifying plant diseases efficiently. Upload an image of a plant, and our system will analyze it to detect any signs of diseases. Together, let's protect our crops and ensure a healthier harvest!
 
-    ### How It Works
-    1. **Upload Image:** Go to the **Disease Recognition** page and upload an image of a plant with suspected diseases.
-    2. **Analysis:** Our system will process the image using advanced algorithms to identify potential diseases.
-    3. **Results:** View the results and recommendations for further action.
+DISEASE_GUIDANCE = {
+    "healthy": "No visible disease class was detected. Keep monitoring the plant and maintain good watering, airflow, and soil hygiene.",
+    "disease": "Isolate affected leaves where possible, avoid overhead watering, and confirm the diagnosis with a local agricultural expert before applying treatment.",
+}
 
-    ### Why Choose Us?
-    - **Accuracy:** Our system utilizes state-of-the-art machine learning techniques for accurate disease detection.
-    - **User-Friendly:** Simple and intuitive interface for seamless user experience.
-    - **Fast and Efficient:** Receive results in seconds, allowing for quick decision-making.
 
-    ### Get Started
-    Click on the **Disease Recognition** page in the sidebar to upload an image and experience the power of our Plant Disease Recognition System!
+@st.cache_resource(show_spinner=False)
+def load_trained_model(model_path: str):
+    return tf.keras.models.load_model(model_path)
 
-    ### About Us
-    Learn more about the project, our team, and our goals on the **About** page.
-""")
-    
-#About Page
-elif(app_mode=="About"):
-    st.header("About")
-    st.markdown("""
-    #### About Dataset
-    This dataset is recreated using offline augmentation from the original dataset. . This dataset consists of about 43k rgb images of healthy and diseased crop leaves which is categorized into 38 different classes. The total dataset is divided into 80/20 ratio of training and validation set. A test directory containing 10k test images is created later for prediction purpose.
-    #### Content
-    1. Train (34756 images)
-    2. Valid (8691 image)
-    3. Test (10849 images)
-""")
-    
-#Prediction Page
-elif(app_mode=="Disease Prediction"):
+
+def model_available() -> bool:
+    return CONFIG.model_path.exists()
+
+
+def download_model_from_env() -> bool:
+    model_url = os.getenv("PLANT_MODEL_URL")
+    if not model_url:
+        return False
+
+    CONFIG.model_path.parent.mkdir(parents=True, exist_ok=True)
+    urlretrieve(model_url, CONFIG.model_path)
+    return CONFIG.model_path.exists()
+
+
+@st.cache_data(show_spinner=False)
+def get_class_names(class_names_path: str) -> list[str]:
+    return load_class_names(class_names_path)
+
+
+def render_home() -> None:
+    st.title("Plant Disease Detection")
+    if HOME_IMAGE.exists():
+        st.image(str(HOME_IMAGE), use_container_width=True)
+
+    st.markdown(
+        """
+        Upload a crop leaf image and get a disease prediction from a TensorFlow CNN trained
+        on 38 PlantVillage-style crop health classes.
+
+        This demo is designed for portfolio review: it shows the model output, confidence
+        ranking, and practical caution around using ML predictions for agricultural decisions.
+        """
+    )
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Classes", "38")
+    col2.metric("Reported test accuracy", "95.23%")
+    col3.metric("Model parameters", "15.05M")
+
+
+def render_about() -> None:
+    st.header("Project Overview")
+    st.markdown(
+        """
+        This project classifies healthy and diseased crop leaves using a custom convolutional
+        neural network. The training notebook uses an 80/20 split from the training directory
+        for training and validation, then evaluates the final model on a separate test folder.
+
+        **Local dataset layout**
+
+        - `dataset-2/train`: 43,456 images across 38 classes
+        - `dataset-2/test`: 10,849 images across 38 classes
+
+        **Current reported results**
+
+        - Validation accuracy: 95.16%
+        - Best validation accuracy: 95.66%
+        - Test accuracy: 95.23%
+        """
+    )
+
+    st.info(
+        "This model is best understood as a portfolio ML demo. Real-world farm images can differ from the training dataset, so predictions should be verified before treatment decisions."
+    )
+
+
+def render_prediction() -> None:
     st.header("Disease Prediction")
-    test_image = st.file_uploader("Choose an Image:")
-    
-    if(st.button("Show Image")):
-        st.image(test_image,use_column_width=True)
-        
-    #Predict Button
-    if(st.button("Predict")):
-        with st.spinner("Please Wait.."):
-            st.write("Our Prediction")
-            result_index = model_prediction(test_image)
-            
-            #Define Class
-            class_name = ['Apple___Apple_scab',
-        'Apple___Black_rot',
-        'Apple___Cedar_apple_rust',
-        'Apple___healthy',
-        'Blueberry___healthy',
-        'Cherry_(including_sour)___Powdery_mildew',
-        'Cherry_(including_sour)___healthy',
-        'Corn_(maize)___Cercospora_leaf_spot Gray_leaf_spot',
-        'Corn_(maize)___Common_rust_',
-        'Corn_(maize)___Northern_Leaf_Blight',
-        'Corn_(maize)___healthy',
-        'Grape___Black_rot',
-        'Grape___Esca_(Black_Measles)',
-        'Grape___Leaf_blight_(Isariopsis_Leaf_Spot)',
-        'Grape___healthy',
-        'Orange___Haunglongbing_(Citrus_greening)',
-        'Peach___Bacterial_spot',
-        'Peach___healthy',
-        'Pepper,_bell___Bacterial_spot',
-        'Pepper,_bell___healthy',
-        'Potato___Early_blight',
-        'Potato___Late_blight',
-        'Potato___healthy',
-        'Raspberry___healthy',
-        'Soybean___healthy',
-        'Squash___Powdery_mildew',
-        'Strawberry___Leaf_scorch',
-        'Strawberry___healthy',
-        'Tomato___Bacterial_spot',
-        'Tomato___Early_blight',
-        'Tomato___Late_blight',
-        'Tomato___Leaf_Mold',
-        'Tomato___Septoria_leaf_spot',
-        'Tomato___Spider_mites Two-spotted_spider_mite',
-        'Tomato___Target_Spot',
-        'Tomato___Tomato_Yellow_Leaf_Curl_Virus',
-        'Tomato___Tomato_mosaic_virus',
-        'Tomato___healthy'] 
-            st.success("Model is Predicting it's a {}".format(class_name[result_index]))
+
+    if not model_available():
+        try:
+            with st.spinner("Downloading model artifact..."):
+                downloaded = download_model_from_env()
+        except (OSError, URLError) as error:
+            st.error(f"Could not download the trained model: {error}")
+            return
+
+        if not downloaded:
+            st.error(
+                "The trained model file was not found. Train the model with `make train`, place `trained_model.keras` in the project root, or set `PLANT_MODEL_URL` to a downloadable model artifact."
+            )
+            return
+
+    uploaded_file = st.file_uploader(
+        "Choose a crop leaf image",
+        type=["jpg", "jpeg", "png"],
+    )
+
+    if uploaded_file is None:
+        st.warning("Upload an image to run prediction.")
+        return
+
+    st.image(uploaded_file, caption="Uploaded image", use_container_width=True)
+
+    if st.button("Predict", type="primary"):
+        with st.spinner("Running model inference..."):
+            model = load_trained_model(str(CONFIG.model_path))
+            predictions = predict_top_k(
+                model=model,
+                image_path=BytesIO(uploaded_file.getvalue()),
+                image_size=CONFIG.image_size,
+                class_names=get_class_names(str(CONFIG.class_names_path)),
+                top_k=CONFIG.top_k,
+            )
+
+        top_prediction = predictions[0]
+        top_label = str(top_prediction["class_name"])
+        confidence = float(top_prediction["confidence"])
+
+        st.success(f"Top prediction: {top_prediction['display_name']} ({confidence:.2%})")
+
+        st.subheader("Confidence Ranking")
+        for prediction in predictions:
+            st.progress(float(prediction["confidence"]), text=f"{prediction['display_name']} - {float(prediction['confidence']):.2%}")
+
+        st.subheader("Suggested Next Step")
+        guidance_key = "healthy" if is_healthy(top_label) else "disease"
+        st.write(DISEASE_GUIDANCE[guidance_key])
+
+
+def main() -> None:
+    st.set_page_config(
+        page_title="Plant Disease Detection",
+        page_icon="🌿",
+        layout="wide",
+    )
+
+    st.sidebar.title("Navigation")
+    app_mode = st.sidebar.selectbox("Select page", ["Home", "About", "Disease Prediction"])
+
+    if app_mode == "Home":
+        render_home()
+    elif app_mode == "About":
+        render_about()
+    else:
+        render_prediction()
+
+
+if __name__ == "__main__":
+    main()

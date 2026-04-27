@@ -1,0 +1,16 @@
+{
+  "dataset_dir": "dataset-2",
+  "train_dir": "dataset-2/train",
+  "test_dir": "dataset-2/test",
+  "model_path": "trained_model.keras",
+  "class_names_path": "artifacts/class_names.json",
+  "history_path": "training_history.json",
+  "reports_dir": "reports",
+  "image_size": [128, 128],
+  "batch_size": 32,
+  "validation_split": 0.2,
+  "seed": 42,
+  "epochs": 10,
+  "learning_rate": 0.0001,
+  "top_k": 3
+}

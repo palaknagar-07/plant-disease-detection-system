@@ -42,6 +42,7 @@ ml_env/
 *.joblib
 *.keras
 models/
+reports/
 
 # ===============================
 
@@ -53,6 +54,9 @@ data/
 dataset/
 datasets/
 dataset-2/
+
+# Keep generated model/data artifacts out of Git.
+# Publish large files through GitHub Releases, Google Drive, Kaggle, or Hugging Face.
 
 # ===============================
 
